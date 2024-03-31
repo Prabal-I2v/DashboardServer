@@ -8,24 +8,25 @@ namespace BusinessLayer.QueryUtils
     {
         private static readonly Dictionary<string, string> TimePeriodToItsClubMapping = new Dictionary<string, string>
         {
-            { "hour", "HH24" }, { "date", "DD" }, { "month", "MM" }, { "year", "YYYY" },
-            { "week", "IW" } // this is for week of the year - if we need week of month we can use W
+            { "hour", "hour" }, { "date", "date" }, { "month", "month" }, { "year", "year" },
+            { "week", "week" } // this is for week of the year - if we need week of month we can use W
         };
 
         public static string GetQuery(WidgetRequestModel req)
         {
             string finalQuery = string.Empty;
             Dictionary<string, string> QueryPartNameToQueryMap = new Dictionary<string, string>();
-            string Basequery = string.Empty, whereClausePart = string.Empty;
+            string Basequery = string.Empty;
+            string aggregateMethodStartingPartQuery = String.Empty;
+            string aggregateMethodEndPartQuery = string.Empty;
+            string aggregateMethodGroupByOptionalPart = string.Empty;
+            string whereClausePart = string.Empty;
             CreateBaseQueryWithRules(req, out Basequery, out whereClausePart);
             QueryPartNameToQueryMap.Add("baseQuery", Basequery);
 
 
             if (req.FieldName != null && req.FieldName.Count > 0)
             {
-                string aggregateMethodStartingPartQuery = string.Empty,
-                    aggregateMethodEndPartQuery = string.Empty,
-                    aggregateMethodGroupByOptionalPart = string.Empty;
                 switch (req.Method)
                 {
                     case Enum_Method.Count:
@@ -33,23 +34,20 @@ namespace BusinessLayer.QueryUtils
                         QueryForCount(req, out aggregateMethodStartingPartQuery, out aggregateMethodEndPartQuery);
                         break;
                     case Enum_Method.Sum:
-
-                        QueryForSum(req, whereClausePart, out aggregateMethodStartingPartQuery,
-                            out aggregateMethodEndPartQuery, out aggregateMethodGroupByOptionalPart,
-                            out whereClausePart);
+                        QueryForSum(req, out aggregateMethodStartingPartQuery, out aggregateMethodEndPartQuery, out aggregateMethodGroupByOptionalPart);
                         QueryPartNameToQueryMap.Add("whereClausePart", whereClausePart);
                         break;
-                    case Enum_Method.LiveCount:
-                        QueryForLiveCount(req, out aggregateMethodStartingPartQuery, out aggregateMethodEndPartQuery,
-                            out whereClausePart);
-                        QueryPartNameToQueryMap.Add("whereClausePart", whereClausePart);
-                        break;
-                    case Enum_Method.Average:
-                        QueryForAverage(req, whereClausePart, out aggregateMethodStartingPartQuery,
-                            out aggregateMethodEndPartQuery, out aggregateMethodGroupByOptionalPart,
-                            out whereClausePart);
-                        QueryPartNameToQueryMap.Add("whereClausePart", whereClausePart);
-                        break;
+                    // case Enum_Method.LiveCount:
+                    //     QueryForLiveCount(req, out aggregateMethodStartingPartQuery, out aggregateMethodEndPartQuery,
+                    //         out whereClausePart);
+                    //     QueryPartNameToQueryMap.Add("whereClausePart", whereClausePart);
+                    //     break;
+                    // case Enum_Method.Average:
+                    //     QueryForAverage(req, whereClausePart, out aggregateMethodStartingPartQuery,
+                    //         out aggregateMethodEndPartQuery, out aggregateMethodGroupByOptionalPart,
+                    //         out whereClausePart);
+                    //     QueryPartNameToQueryMap.Add("whereClausePart", whereClausePart);
+                    //     break;
                 }
 
                 QueryPartNameToQueryMap.Add("aggregateMethodStartingPartQuery", aggregateMethodStartingPartQuery);
@@ -60,11 +58,10 @@ namespace BusinessLayer.QueryUtils
                 {
                     if (req.GroupByOneIsTime)
                     {
-                        string groupBy1TimeStartPart = string.Empty,
-                            groupBy1TimeMidPart = string.Empty,
-                            groupBy1TimeEndPart = string.Empty;
-                        QueryForGroupByTime(req.GroupBy1, req.ClubbingTime, out groupBy1TimeStartPart,
-                            out groupBy1TimeMidPart, out groupBy1TimeEndPart);
+                        string groupBy1TimeStartPart = string.Empty;
+                        string groupBy1TimeMidPart = string.Empty;
+                        string groupBy1TimeEndPart = string.Empty;
+                        QueryForGroupByTime(req.GroupBy1, out groupBy1TimeStartPart, out groupBy1TimeMidPart, out groupBy1TimeEndPart);
                         QueryPartNameToQueryMap.Add("groupBy1TimeStartPart", groupBy1TimeStartPart);
                         QueryPartNameToQueryMap.Add("groupBy1TimeMidPart", groupBy1TimeMidPart);
                         QueryPartNameToQueryMap.Add("groupBy1TimeEndPart", groupBy1TimeEndPart);
@@ -82,11 +79,10 @@ namespace BusinessLayer.QueryUtils
                 {
                     if (req.GroupByTwoIsTime)
                     {
-                        string groupBy2TimeStartPart = string.Empty,
-                            groupBy2TimeMidPart = string.Empty,
-                            groupBy2TimeEndPart = string.Empty;
-                        QueryForGroupByTime(req.GroupBy2, req.ClubbingTime, out groupBy2TimeStartPart,
-                            out groupBy2TimeMidPart, out groupBy2TimeEndPart);
+                        string groupBy2TimeStartPart = string.Empty;
+                        string groupBy2TimeMidPart = string.Empty;
+                        string groupBy2TimeEndPart = string.Empty;
+                        QueryForGroupByTime(req.GroupBy2, out groupBy2TimeStartPart, out groupBy2TimeMidPart, out groupBy2TimeEndPart);
                         QueryPartNameToQueryMap.Add("groupBy2TimeStartPart", groupBy2TimeStartPart);
                         QueryPartNameToQueryMap.Add("groupBy2TimeMidPart", groupBy2TimeMidPart);
                         QueryPartNameToQueryMap.Add("groupBy2TimeEndPart", groupBy2TimeEndPart);
@@ -122,7 +118,7 @@ namespace BusinessLayer.QueryUtils
             var endTime = req.EndTime;
 
             entityName = req.Entity.ToString();
-            Basequery = $"SELECT * FROM events.\"{entityName}\" ";
+            Basequery = $"SELECT * FROM {req.SchemaName.ToString().ToLower()}.\"{entityName}\" ";
             whereClausePart = $"\"Time\" >= '{startTime}' AND \"Time\" <= '{endTime}' ";
 
 
@@ -308,49 +304,8 @@ namespace BusinessLayer.QueryUtils
         private static void QueryForCount(WidgetRequestModel req, out string countStartPartQuery,
             out string countEndPartQuery)
         {
-            string columnName;
-            var NormalColumn = false;
-            if (req.Entity == Enum_Entity.Events && !req.FieldName.First().Key.Contains("EventsProperties"))
-            {
-                NormalColumn = true;
-            }
-
-            if (NormalColumn)
-            {
-                columnName = req.FieldName.First().Key;
-                countStartPartQuery = $"\"{columnName}\" as {columnName}, COUNT(\"{columnName}\") as count ";
-            }
-            else
-            {
-                columnName = req.FieldName.First().Key.Split('.')[1];
-                if (req.Entity == Enum_Entity.Events)
-                {
-                }
-
-                if (req.FieldName.First().Value == PropertyType.StringArray)
-                {
-                    if (req.Entity == Enum_Entity.Events)
-                    {
-                        countStartPartQuery =
-                            $"jsonb_array_elements( case jsonb_typeof(\"_EventsProperties\" -> '{columnName}') when 'array' then \"_EventsProperties\" -> '{columnName}' else '[]' end) as {columnName}, COUNT( DISTINCT \"Id\") as count ";
-                    }
-                    else
-                        countStartPartQuery =
-                            $"jsonb_array_elements( case jsonb_typeof(\"_Properties\" -> '{columnName}') when 'array' then \"_Properties\" -> '{columnName}' else '[]' end) as {columnName}, COUNT( DISTINCT \"Id\") as count ";
-                }
-                else
-                {
-                    if (req.Entity == Enum_Entity.Events)
-                    {
-                        countStartPartQuery =
-                            $"\"_EventsProperties\" ->> '{columnName}'  as {columnName}, COUNT( DISTINCT \"Id\") as count ";
-                    }
-                    else
-                        countStartPartQuery =
-                            $"\"_Properties\" ->> '{columnName}'  as {columnName}, COUNT( DISTINCT \"Id\") as count ";
-                }
-            }
-
+            string columnName = req.FieldName.First().Key;
+            countStartPartQuery = $"\"{columnName}\" as {columnName}, COUNT(\"{columnName}\") as count ";
             countEndPartQuery = $" Group By {columnName} ";
         }
 
@@ -576,16 +531,9 @@ namespace BusinessLayer.QueryUtils
             EndPartQuery = "";
             GroupByOptionalPart = "";
             whereClausePart = "";
-            // if (req.Entity == Enum_Entity.ResourceDataLogs)
-            // {
-            //     SumOrAverageQueryForResourceDataLog(req, whereClause, true, out StartPartQuery, out EndPartQuery,
-            //         out GroupByOptionalPart, out whereClausePart);
-            // }
-            // else
-            // {
-            //     QueryForAverageForEventsAndResource(req, whereClause, out StartPartQuery, out EndPartQuery,
-            //         out GroupByOptionalPart, out whereClausePart);
-            // }
+
+            QueryForAverageForEventsAndResource(req, whereClause, out StartPartQuery, out EndPartQuery,
+                out GroupByOptionalPart, out whereClausePart);
         }
 
         private static void QueryForAverageForEventsAndResource(WidgetRequestModel req, string whereClause,
@@ -601,42 +549,13 @@ namespace BusinessLayer.QueryUtils
             foreach (var it in req.FieldName.Select((name, Index) => new { name, Index }))
             {
                 var fieldName = it.name;
-                if (fieldName.Key.Contains("_EventsProperties") || fieldName.Key.Contains("EventsProperties"))
-                {
+               
                     if (fieldName.Value == PropertyType.Number || fieldName.Value == PropertyType.Float)
                     {
                         if (string.IsNullOrEmpty(columnName))
                         {
-                            columnName = fieldName.Key.Split('.')[1];
-                            StartPartQuery = $" Round(avg(value::numeric),2) avg ";
-                            EndPartQuery =
-                                $" ,jsonb_each_text(\"_EventsProperties\") as pair(key,value) where  key ~* '({columnName})'";
-                            GroupByOptionalPart = " Group By ";
-                            previousColumnName = columnName;
-                        }
-                        else
-                        {
-                            columnName = fieldName.Key.Split('.')[1];
-                            string newColumnValue = $"{previousColumnName}|{columnName}";
-                            EndPartQuery = EndPartQuery.Replace(previousColumnName, newColumnValue);
-                            previousColumnName = newColumnValue;
-                        }
-
-                        if (req.IsDistinct && !StartPartQuery.Contains("key,"))
-                        {
-                            StartPartQuery = $" key, {StartPartQuery}";
-                            GroupByOptionalPart = " Group By key";
-                        }
-                    }
-                }
-                else
-                {
-                    if (fieldName.Value == PropertyType.Number || fieldName.Value == PropertyType.Float)
-                    {
-                        if (string.IsNullOrEmpty(columnName))
-                        {
-                            columnName = fieldName.Key.Split('.')[1];
-                            StartPartQuery = $"  Round(avg(value::numeric),2) avg ";
+                            columnName = fieldName.Key;
+                            StartPartQuery = $"  Round(avg(columnName),2) avg ";
                             EndPartQuery =
                                 $" ,jsonb_each_text(\"_Properties\") as pair(key,value) where  key ~* '({columnName})'";
                             GroupByOptionalPart = " Group By ";
@@ -656,155 +575,75 @@ namespace BusinessLayer.QueryUtils
                             GroupByOptionalPart = " Group By key";
                         }
                     }
-                }
+                
             }
         }
 
-        private static void QueryForSum(WidgetRequestModel req, string whereClause, out string sumStartPartQuery,
-            out string sumEndPartQuery, out string sumGroupByOptionalPart, out string whereClausePart)
+        private static void QueryForSum(WidgetRequestModel req, out string aggregateSumQueryStartingPart,
+            out string aggregateSumQueryEndingPart, out string sumGroupByOptionalPart)
         {
-            if (req.Entity == Enum_Entity.Events)
+            aggregateSumQueryStartingPart = string.Empty;
+            aggregateSumQueryEndingPart = string.Empty;
+            var columnsToClubQuery = string.Empty;
+            sumGroupByOptionalPart = string.Empty;
+            if (req.ClubbingFieldName != "" && req.FieldName.Count > 0)
             {
-                SumOrAverageQueryForResourceDataLog(req, whereClause, false, out sumStartPartQuery, out sumEndPartQuery,
-                    out sumGroupByOptionalPart, out whereClausePart);
+                columnsToClubQuery = "Sum(";
+                sumGroupByOptionalPart = " Group By ";
             }
-            else
+
+            foreach (var it in req.FieldName.Select((name, Index) => new { name, Index }))
             {
-                whereClausePart = whereClause;
-                string columnName = string.Empty;
-                string previousColumnName = string.Empty;
-                sumStartPartQuery = string.Empty;
-                sumEndPartQuery = string.Empty;
-                sumGroupByOptionalPart = string.Empty;
-                foreach (var it in req.FieldName.Select((name, Index) => new { name, Index }))
+                var fieldName = it.name;
+                var columnQuery = "";
+                if (fieldName.Value == PropertyType.Number || fieldName.Value == PropertyType.Float)
                 {
-                    var fieldName = it.name;
-                    if (fieldName.Key.Contains("_EventsProperties") || fieldName.Key.Contains("EventsProperties"))
-                    {
-                        if (fieldName.Value == PropertyType.Number || fieldName.Value == PropertyType.Float)
-                        {
-                            if (string.IsNullOrEmpty(columnName))
-                            {
-                                columnName = fieldName.Key.Split('.')[1];
-                                sumStartPartQuery = $" sum(value::numeric) sum ";
-                                sumEndPartQuery =
-                                    $" ,jsonb_each_text(\"_EventsProperties\") as pair(key,value) where  key ~* '({columnName})'";
-                                sumGroupByOptionalPart = " Group By ";
-                                previousColumnName = columnName;
-                            }
-                            else
-                            {
-                                columnName = fieldName.Key.Split('.')[1];
-                                string newColumnValue = $"{previousColumnName}|{columnName}";
-                                sumEndPartQuery = sumEndPartQuery.Replace(previousColumnName, newColumnValue);
-                                previousColumnName = newColumnValue;
-                            }
+                    columnQuery += $"Sum({fieldName.Key}) as {fieldName.Key}";
+                }
 
-                            if (req.IsDistinct && !sumStartPartQuery.Contains("key,"))
-                            {
-                                sumStartPartQuery = $" key, {sumStartPartQuery}";
-                                sumGroupByOptionalPart = " Group By key";
-                            }
-                        }
-                        //if (req.IsDistinct)
-                        //{
-                        //    if (string.IsNullOrEmpty(columnName))
-                        //    {
-                        //        columnName = fieldName.Key;
-                        //        sumStartPartQuery = $" SUM(\"{columnName}\") as {columnName} ";
-                        //    }
-                        //    else
-                        //    {
-                        //        columnName = fieldName.Key;
-                        //        sumStartPartQuery += $", SUM(\"{columnName}\") as {columnName} ";
-                        //    }
-                        //}
-                        //else
-                        //{
-                        //    if (string.IsNullOrEmpty(columnName))
-                        //    {
-                        //        columnName = fieldName.Key;
-                        //        sumStartPartQuery = $" SUM(\"{columnName}\" ";
-                        //    }
-                        //    else
-                        //    {
-                        //        columnName = fieldName.Key;
-                        //        sumStartPartQuery += $" + \"{columnName}\" ";
-                        //        if (it.Index == req.FieldName.Count - 1)
-                        //        {
-                        //             sumStartPartQuery += ") as sum";
-                        //        }
-                        //    }
-                        //}
-                        //sumGroupByOptionalPart = $" Group By ";
-                    }
-                    else
-                    {
-                        if (fieldName.Value == PropertyType.Number || fieldName.Value == PropertyType.Float)
-                        {
-                            if (string.IsNullOrEmpty(columnName))
-                            {
-                                columnName = fieldName.Key;
-                                sumStartPartQuery = $" sum(value::numeric) sum ";
-                                sumEndPartQuery =
-                                    $" ,jsonb_each_text(\"_Properties\") as pair(key,value) where  key ~* '({columnName})'";
-                                sumGroupByOptionalPart = " Group By ";
-                                previousColumnName = columnName;
-                            }
-                            else
-                            {
-                                columnName = fieldName.Key.Split('.')[1];
-                                string newColumnValue = $"{previousColumnName}|{columnName}";
-                                sumEndPartQuery = sumEndPartQuery.Replace(previousColumnName, newColumnValue);
-                                previousColumnName = newColumnValue;
-                            }
+                aggregateSumQueryStartingPart += columnQuery;
+                if (req.ClubbingFieldName != "" && req.FieldName.Count > 0)
+                {
+                    columnsToClubQuery += fieldName.Key;
+                }
 
-                            if (req.IsDistinct && !sumStartPartQuery.Contains("key,"))
-                            {
-                                sumStartPartQuery = $" key, {sumStartPartQuery}";
-                                sumGroupByOptionalPart = " Group By key";
-                            }
-                        }
-                    }
+                if (it.Index < req.FieldName.Count)
+                {
+                    aggregateSumQueryStartingPart += ',';
+                }
+                if (it.Index < req.FieldName.Count-1)
+                {
+                    columnsToClubQuery += "+";
                 }
             }
+
+            if (req.ClubbingFieldName != "" && req.FieldName.Count > 0)
+            {
+                columnsToClubQuery += $") as {req.ClubbingFieldName}";
+                aggregateSumQueryStartingPart += columnsToClubQuery;
+            }
+
+            aggregateSumQueryEndingPart = "";
         }
 
-        private static void QueryForGroupByTime(string GroupByTimeName, bool club, out string groupByTimeStartPart,
-            out string groupByTimeMidPart, out string groupByTimeEndPart)
+
+        private static void QueryForGroupByTime(string groupByTimeName, out string groupByTimeStartPart, out string groupByTimeMidPart,
+            out string groupByTimeEndPart)
         {
-            groupByTimeMidPart = $"date_trunc('{GroupByTimeName}', \"EventsTriggeredTime\") as {GroupByTimeName}";
-            groupByTimeEndPart = $"{GroupByTimeName}";
-            if (club)
-            {
-                string mapping;
-                TimePeriodToItsClubMapping.TryGetValue(GroupByTimeName, out mapping);
-                groupByTimeStartPart = $"TO_CHAR(subpart1.\"{GroupByTimeName}\", '{mapping}')";
-                // TODO: change above by mapping month or other to corresponding
-            }
-            else
-            {
-                groupByTimeStartPart =
-                    $"{GroupByTimeName}"; // ignore on distinct, in single use it using output table name
-            }
+            string mapping;
+            TimePeriodToItsClubMapping.TryGetValue(groupByTimeName, out mapping);
+            groupByTimeStartPart = $"{groupByTimeName}";
+            groupByTimeMidPart = $"date_trunc('{mapping}', TO_TIMESTAMP(\"Time\")) as {groupByTimeName}";
+            groupByTimeEndPart = $"{groupByTimeName}";
         }
 
         private static void QueryForGroupByProperty(string GroupByPropertyName, out string groupByPropertyPart1,
             out string groupByPropertyPart2)
         {
             string GroupByColumn;
-            if (!GroupByPropertyName.Contains("EventsProperties"))
-            {
-                GroupByColumn = GroupByPropertyName;
-                groupByPropertyPart1 = $"\"{GroupByColumn}\" as {GroupByColumn} ";
-            }
-            else
-            {
-                GroupByColumn = GroupByPropertyName.Split('.')[1];
-                groupByPropertyPart1 = $"\"_EventsProperties\" -> '{GroupByColumn}' as {GroupByColumn} ";
-            }
-
-            groupByPropertyPart2 = $"{GroupByColumn}";
+            GroupByColumn = GroupByPropertyName;
+            groupByPropertyPart1 = $"\"{GroupByColumn}\"";
+            groupByPropertyPart2 = $"\"{GroupByColumn}\"";
         }
 
         private static string JoinQuery(WidgetRequestModel req, Dictionary<string, string> queryPartNameToQueryMap)
@@ -821,11 +660,9 @@ namespace BusinessLayer.QueryUtils
                 string aggregateMethodStartingPartQuery = string.Empty,
                     aggregateMethodEndPartQuery = string.Empty,
                     aggregateMethodGroupByOptionalPart = string.Empty;
-                queryPartNameToQueryMap.TryGetValue("aggregateMethodStartingPartQuery",
-                    out aggregateMethodStartingPartQuery);
+                queryPartNameToQueryMap.TryGetValue("aggregateMethodStartingPartQuery", out aggregateMethodStartingPartQuery);
                 queryPartNameToQueryMap.TryGetValue("aggregateMethodEndPartQuery", out aggregateMethodEndPartQuery);
-                queryPartNameToQueryMap.TryGetValue("aggregateMethodGroupByOptionalPart",
-                    out aggregateMethodGroupByOptionalPart);
+                queryPartNameToQueryMap.TryGetValue("aggregateMethodGroupByOptionalPart", out aggregateMethodGroupByOptionalPart);
 
                 if (req.Method == Enum_Method.Count)
                 {
@@ -990,8 +827,17 @@ namespace BusinessLayer.QueryUtils
                     queryPartNameToQueryMap.TryGetValue("groupBy2PropertyPart1", out groupBy2PropertyPart1);
                     queryPartNameToQueryMap.TryGetValue("groupBy2PropertyPart2", out groupBy2PropertyPart2);
 
-                    groupBy1PropertyPart1 += $",{groupBy2PropertyPart1}";
-                    groupBy1PropertyPart2 += $",{groupBy2PropertyPart2}";
+                    if (!string.IsNullOrEmpty(groupBy1PropertyPart1))
+                    {
+                        groupBy1PropertyPart1 += $",";
+                    }
+
+                    groupBy1PropertyPart1 += $"{groupBy2PropertyPart1}";
+                    if (!string.IsNullOrEmpty(groupBy1PropertyPart2))
+                    {
+                        groupBy1PropertyPart2 += $",";
+                    }
+                    groupBy1PropertyPart2 += $"{groupBy2PropertyPart2}";
                     queryPartNameToQueryMap["groupBy1PropertyPart1"] = groupBy1PropertyPart1;
                     queryPartNameToQueryMap["groupBy1PropertyPart2"] = groupBy1PropertyPart2;
                 }
@@ -1007,15 +853,14 @@ namespace BusinessLayer.QueryUtils
 
             if (req.GroupByOneIsTime)
             {
-                string groupBy1TimeStartPart = string.Empty,
-                    groupBy1TimeMidPart = string.Empty,
-                    groupBy1TimeEndPart = string.Empty;
+                string groupBy1TimeStartPart = string.Empty, groupBy1TimeMidPart = string.Empty, groupBy1TimeEndPart = string.Empty;
                 queryPartNameToQueryMap.TryGetValue("groupBy1TimeStartPart", out groupBy1TimeStartPart);
                 queryPartNameToQueryMap.TryGetValue("groupBy1TimeMidPart", out groupBy1TimeMidPart);
                 queryPartNameToQueryMap.TryGetValue("groupBy1TimeEndPart", out groupBy1TimeEndPart);
 
                 basequery = basequery.Replace("SELECT", $"(SELECT {groupBy1TimeMidPart}, ");
                 basequery += $",{groupBy1TimeEndPart} ) ";
+
             }
             else
             {
@@ -1054,31 +899,34 @@ namespace BusinessLayer.QueryUtils
             {
                 // groupby1 property other than time
                 PropertyGetColumnName(req.GroupBy1, out GroupByColumn);
+                GroupByColumn = req.GroupBy1;
             }
 
             if (req.Method == Enum_Method.Count)
             {
                 // in case of count property can be a one single string
                 PropertyGetColumnName(req.FieldName.First().Key, out columnName);
+                columnName = req.FieldName.First().Key;
             }
             else
-            {
+            {   
                 // in case of sum/avg there can be multiple properties eg. car,bus,truck
                 foreach (var field in req.FieldName)
                 {
-                    if (!field.Key.Contains("EventsProperties"))
-                    {
-                        string temp;
-                        PropertyGetColumnName(field.Key, out temp);
-                        if (string.IsNullOrEmpty(columnName))
-                        {
-                            columnName = $" subpart1.{temp}";
-                        }
-                        else
-                        {
-                            columnName += $",subpart1.{temp}";
-                        }
-                    }
+                    // if (!field.Key.Contains("eventProperties"))
+                    // {
+                    //     string temp;
+                    //     PropertyGetColumnName(field.Key, out temp);
+                    //     if (string.IsNullOrEmpty(columnName))
+                    //     {
+                    //         columnName = $" subpart1.{temp}";
+                    //     }
+                    //     else
+                    //     {
+                    //         columnName += $",subpart1.{temp}";
+                    //     }
+                    // }
+                    columnName += $",subpart1.{field.Key}";
                 }
             }
 
@@ -1098,12 +946,13 @@ namespace BusinessLayer.QueryUtils
                     {
                         GroupBy2Column = $", subpart1.{groupBy2TimeStartPart}";
                     }
+
                 }
                 else
                 {
                     PropertyGetColumnName(req.GroupBy2, out GroupBy2Column);
-                    GroupBy2Column =
-                        $", subpart1.{GroupBy2Column}"; // TODO: check this 2 count queries failed after removing quotes around this
+                    GroupBy2Column = req.GroupBy2;
+                    GroupBy2Column = $", subpart1.{GroupBy2Column}"; // TODO: check this 2 count queries failed after removing quotes around this
                 }
             }
 
@@ -1111,21 +960,20 @@ namespace BusinessLayer.QueryUtils
             {
                 finalQuery = CountFinalQueryHandling(req, basequery, GroupByColumn, GroupBy2Column, columnName);
             }
-            else if (req.Method == Enum_Method.Sum)
+            else if(req.Method== Enum_Method.Sum)
             {
-                finalQuery = SumAvgFinalQueryHandling(req, basequery, GroupByColumn, GroupBy2Column, whereClausePart,
-                    columnName, "sum");
+                finalQuery = SumAvgFinalQueryHandling(req, basequery, GroupByColumn, GroupBy2Column, whereClausePart,columnName,"sum");
             }
             else
             {
-                finalQuery = SumAvgFinalQueryHandling(req, basequery, GroupByColumn, GroupBy2Column, whereClausePart,
-                    columnName, "avg");
+                finalQuery = SumAvgFinalQueryHandling(req, basequery, GroupByColumn, GroupBy2Column, whereClausePart, columnName, "avg");
             }
 
             return finalQuery;
         }
 
-        private static string CountFinalQueryHandling(WidgetRequestModel req, string basequery, string GroupByColumn,
+        private static string CountFinalQueryHandling(WidgetRequestModel req, string basequery,
+            string GroupByColumn,
             string GroupBy2Column, string columnName)
         {
             string finalQuery = string.Empty;
@@ -1149,13 +997,14 @@ namespace BusinessLayer.QueryUtils
 
             if (req.GroupByTwoIsTime && req.ClubbingTime)
             {
-                finalQuery = finalQuery.Replace($"subpart1.{GroupBy2Column}", $"{GroupBy2Column}");
+                finalQuery = finalQuery.Replace($"subpart1.{GroupBy2Column}", $"\"{GroupBy2Column}\"");
             }
 
             return finalQuery;
         }
 
-        private static string SumAvgFinalQueryHandling(WidgetRequestModel req, string basequery, string GroupByColumn,
+        private static string SumAvgFinalQueryHandling(WidgetRequestModel req, string basequery,
+            string GroupByColumn,
             string GroupBy2Column, string whereClausePart, string columnName, string aggeregrateType)
         {
             string finalQuery = string.Empty;
@@ -1169,13 +1018,9 @@ namespace BusinessLayer.QueryUtils
                         $" where {whereClausePart} Group By");
                 }
 
-                if (basequery.Contains("key"))
-                {
                     finalQuery =
-                        $"Select subpart1.{GroupByColumn}{GroupBy2Column},subpart1.key,Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},subpart1.key";
-                }
-                else
-                {
+                        $"Select subpart1.{GroupByColumn}{GroupBy2Column},Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column}";
+
                     if (!req.ClubbingTime)
                     {
                         finalQuery = basequery.Replace(" as subpart1", " ");
@@ -1185,7 +1030,7 @@ namespace BusinessLayer.QueryUtils
                         finalQuery =
                             $"Select subpart1.{GroupByColumn}{GroupBy2Column},{columnName} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},{columnName}";
                     }
-                }
+                
             }
             else
             {
@@ -1197,13 +1042,11 @@ namespace BusinessLayer.QueryUtils
                         $" where {whereClausePart} Group By ");
                 }
 
-                if (basequery.Contains("key"))
-                {
+
                     finalQuery =
                         $"Select subpart1.{GroupByColumn}{GroupBy2Column},Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column}";
-                }
-                else
-                {
+                
+
                     if (!req.ClubbingTime)
                     {
                         finalQuery = basequery.Replace(" as subpart1", " ");
@@ -1213,7 +1056,7 @@ namespace BusinessLayer.QueryUtils
                         finalQuery =
                             $"Select subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType}";
                     }
-                }
+                
             }
 
 

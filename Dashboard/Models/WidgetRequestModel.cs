@@ -16,6 +16,8 @@ public class WidgetRequestModel
     public RuleSet BaseFilter { get; set; }
     //Column to selected for base filter
     public Dictionary<string, PropertyType> FieldName { get; set; }
+    public string ClubbingFieldName { get; set; }
+    public Enum_Schema SchemaName { get; set; }
     public string GroupBy1 { get; set; }
     public bool GroupByOneIsTime { get; set; }
     public bool GroupByTwoIsTime { get; set; }
@@ -29,7 +31,6 @@ public class WidgetRequestModel
     public int MultiplicationFactor { get; set; }
     public RuleSet? PropertyFilters { get; set; }
     public int RefreshInterval { get; set; }
-        
     public bool? IsPreview { get; set; }
 }
 
@@ -105,4 +106,10 @@ public enum PropertyType
     FilePath,
     Array,
     Custom,
+}
+
+public enum Enum_Schema
+{
+    Public,
+    Events
 }
