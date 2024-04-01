@@ -739,46 +739,47 @@ namespace BusinessLayer.QueryUtils
                 finalQuery = $"{basequery} WHERE {whereClausePart}";
             }
 
-            if (req.Pagination || req.PageLimit > 0)
-            {
-                var skip = (req.PageNumber);
-                if (skip < 0 || req.PageNumber == 1)
-                {
-                    skip = 0;
-                }
-
-                var query = "";
-                if (!string.IsNullOrEmpty(whereClausePart))
-                {
-                    query = $"{basequery} WHERE {whereClausePart};";
-                }
-                else
-                {
-                    query = $"{basequery};";
-                }
-
-                finalQuery = query.Replace("*", "Count(*)");
-                if (!string.IsNullOrEmpty(whereClausePart))
-                {
-                    finalQuery += $"{basequery} WHERE {whereClausePart}";
-                }
-                else
-                {
-                    finalQuery += $"{basequery}";
-                }
-
-                if (req.WidgetType == Enum_WidgetType.Table && req.Entity == Enum_Entity.Events)
-                {
-                    string whereclauseForCount =
-                        $"WHERE \"Log_Date\" >= EXTRACT(epoch FROM TIMESTAMP '{req.StartTime}') * 1000 AND \"Log_Date\" <= EXTRACT(epoch FROM TIMESTAMP '{req.EndTime}') * 1000;";
-                    finalQuery.Replace(";", whereclauseForCount);
-                    finalQuery += whereclauseForCount;
-                }
-
-                finalQuery += $" ORDER BY \"Id\" DESC OFFSET ({skip}) ROWS FETCH NEXT ({req.PageLimit}) ROWS ONLY ";
-            }
+            // if (req.Pagination || req.PageLimit > 0)
+            // {
+            //     var skip = (req.PageNumber);
+            //     if (skip < 0 || req.PageNumber == 1)
+            //     {
+            //         skip = 0;
+            //     }
+            //
+            //     var query = "";
+            //     if (!string.IsNullOrEmpty(whereClausePart))
+            //     {
+            //         query = $"{basequery} WHERE {whereClausePart};";
+            //     }
+            //     else
+            //     {
+            //         query = $"{basequery};";
+            //     }
+            //
+            //     finalQuery = query.Replace("*", "Count(*)");
+            //     if (!string.IsNullOrEmpty(whereClausePart))
+            //     {
+            //         finalQuery += $"{basequery} WHERE {whereClausePart}";
+            //     }
+            //     else
+            //     {
+            //         finalQuery += $"{basequery}";
+            //     }
+            //
+            //     if (req.WidgetType == Enum_WidgetType.Table && req.Entity == Enum_Entity.Events)
+            //     {
+            //         string whereclauseForCount =
+            //             $"WHERE \"Log_Date\" >= EXTRACT(epoch FROM TIMESTAMP '{req.StartTime}') * 1000 AND \"Log_Date\" <= EXTRACT(epoch FROM TIMESTAMP '{req.EndTime}') * 1000;";
+            //         finalQuery.Replace(";", whereclauseForCount);
+            //         finalQuery += whereclauseForCount;
+            //     }
+            //
+            //     finalQuery += $" ORDER BY \"Id\" DESC OFFSET ({skip}) ROWS FETCH NEXT ({req.PageLimit}) ROWS ONLY ";
+            // }
 
             // replace double space by single space
+            
             finalQuery = finalQuery.Replace("  ", " ");
             finalQuery = finalQuery.Trim();
             return finalQuery;
@@ -843,7 +844,7 @@ namespace BusinessLayer.QueryUtils
                 }
             }
         }
-
+        
         private static string JoinQueryGroup1Handling(WidgetRequestModel req, ref string basequery,
             ref Dictionary<string, string> queryPartNameToQueryMap)
         {
@@ -860,7 +861,6 @@ namespace BusinessLayer.QueryUtils
 
                 basequery = basequery.Replace("SELECT", $"(SELECT {groupBy1TimeMidPart}, ");
                 basequery += $",{groupBy1TimeEndPart} ) ";
-
             }
             else
             {
@@ -871,6 +871,7 @@ namespace BusinessLayer.QueryUtils
                 basequery = basequery.Replace("SELECT", $"(SELECT {groupBy1PropertyPart1}, ");
                 basequery += $",{groupBy1PropertyPart2} ) ";
             }
+            
 
             if (req.Method == Enum_Method.Count || !string.IsNullOrEmpty(req.GroupBy1))
             {
@@ -956,6 +957,8 @@ namespace BusinessLayer.QueryUtils
                 }
             }
 
+            basequery = AddOrderBy(basequery);
+            
             if (req.Method == Enum_Method.Count)
             {
                 finalQuery = CountFinalQueryHandling(req, basequery, GroupByColumn, GroupBy2Column, columnName);
@@ -1003,6 +1006,33 @@ namespace BusinessLayer.QueryUtils
             return finalQuery;
         }
 
+        public static string AddOrderBy(string sqlQuery)
+        {
+            // Define the regex pattern to match the GROUP BY clause
+            string pattern = @"Group By (.*?)(?=\))";
+
+            // Extract the GROUP BY clause using regex
+            Match match = Regex.Match(sqlQuery, pattern);
+            if (match.Success)
+            {
+                // Split the GROUP BY entities
+                string[] groupByEntities = match.Groups[1].Value.Split(',');
+
+                string groupByPart = match.ToString();
+                // Reconstruct the GROUP BY clause
+                string orderByClausePart = "Order By " + string.Join(",", groupByEntities);
+                string newPart = $"{groupByPart} {orderByClausePart}";
+                // Replace the original GROUP BY clause with the sorted one
+                string sortedSqlQuery = sqlQuery.Replace(groupByPart, newPart);
+
+                // Add ORDER BY clause within the subquery
+                // sortedSqlQuery = sortedSqlQuery.Insert(sortedSqlQuery.IndexOf(")"), " ORDER BY " + string.Join(",", groupByEntities));
+
+                return sortedSqlQuery;
+            }
+
+            return sqlQuery;
+        }
         private static string SumAvgFinalQueryHandling(WidgetRequestModel req, string basequery,
             string GroupByColumn,
             string GroupBy2Column, string whereClausePart, string columnName, string aggeregrateType)
@@ -1014,21 +1044,23 @@ namespace BusinessLayer.QueryUtils
                 if (!basequery.Contains("where"))
                 {
                     basequery = Regex.Replace(basequery, "(Group\\sBy\\s*,)", "Group By ");
+                    basequery = Regex.Replace(basequery, "(Order\\sBy\\s*,)", "Order By ");
                     basequery = basequery.Replace($" AND {whereClausePart} Group By",
                         $" where {whereClausePart} Group By");
                 }
 
                     finalQuery =
-                        $"Select subpart1.{GroupByColumn}{GroupBy2Column},Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column}";
+                        $"Select subpart1.{GroupByColumn}{GroupBy2Column},Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column} order by subpart1.{GroupByColumn}{GroupBy2Column}";
 
                     if (!req.ClubbingTime)
                     {
+                        basequery += 
                         finalQuery = basequery.Replace(" as subpart1", " ");
                     }
                     else
                     {
                         finalQuery =
-                            $"Select subpart1.{GroupByColumn}{GroupBy2Column},{columnName} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},{columnName}";
+                            $"Select subpart1.{GroupByColumn}{GroupBy2Column},{columnName} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},{columnName}  order by subpart1.{{GroupByColumn}}{{GroupBy2Column}},{{columnName}}";
                     }
                 
             }
@@ -1044,7 +1076,7 @@ namespace BusinessLayer.QueryUtils
 
 
                     finalQuery =
-                        $"Select subpart1.{GroupByColumn}{GroupBy2Column},Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column}";
+                        $"Select subpart1.{GroupByColumn}{GroupBy2Column},Round({aggeregrateType}(subpart1.{aggeregrateType}),2) as {aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column} order by subpart1.{GroupByColumn}{GroupBy2Column}";
                 
 
                     if (!req.ClubbingTime)
@@ -1054,7 +1086,7 @@ namespace BusinessLayer.QueryUtils
                     else
                     {
                         finalQuery =
-                            $"Select subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType}";
+                            $"Select subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType} order by subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{aggeregrateType}";
                     }
                 
             }
