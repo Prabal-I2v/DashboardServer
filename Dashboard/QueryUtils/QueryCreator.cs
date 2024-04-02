@@ -15,6 +15,7 @@ namespace BusinessLayer.QueryUtils
         public static string GetQuery(WidgetRequestModel req)
         {
             string finalQuery = string.Empty;
+            
             Dictionary<string, string> QueryPartNameToQueryMap = new Dictionary<string, string>();
             string Basequery = string.Empty;
             string aggregateMethodStartingPartQuery = String.Empty;
@@ -25,8 +26,8 @@ namespace BusinessLayer.QueryUtils
             QueryPartNameToQueryMap.Add("baseQuery", Basequery);
 
 
-            if (req.FieldName != null && req.FieldName.Count > 0)
-            {
+            // if (req.FieldName != null && req.FieldName.Count > 0)
+            // {
                 switch (req.Method)
                 {
                     case Enum_Method.Count:
@@ -61,7 +62,7 @@ namespace BusinessLayer.QueryUtils
                         string groupBy1TimeStartPart = string.Empty;
                         string groupBy1TimeMidPart = string.Empty;
                         string groupBy1TimeEndPart = string.Empty;
-                        QueryForGroupByTime(req.GroupBy1, out groupBy1TimeStartPart, out groupBy1TimeMidPart, out groupBy1TimeEndPart);
+                        QueryForGroupByTime(req, req.GroupBy1, out groupBy1TimeStartPart, out groupBy1TimeMidPart, out groupBy1TimeEndPart);
                         QueryPartNameToQueryMap.Add("groupBy1TimeStartPart", groupBy1TimeStartPart);
                         QueryPartNameToQueryMap.Add("groupBy1TimeMidPart", groupBy1TimeMidPart);
                         QueryPartNameToQueryMap.Add("groupBy1TimeEndPart", groupBy1TimeEndPart);
@@ -82,7 +83,7 @@ namespace BusinessLayer.QueryUtils
                         string groupBy2TimeStartPart = string.Empty;
                         string groupBy2TimeMidPart = string.Empty;
                         string groupBy2TimeEndPart = string.Empty;
-                        QueryForGroupByTime(req.GroupBy2, out groupBy2TimeStartPart, out groupBy2TimeMidPart, out groupBy2TimeEndPart);
+                        QueryForGroupByTime(req, req.GroupBy2, out groupBy2TimeStartPart, out groupBy2TimeMidPart, out groupBy2TimeEndPart);
                         QueryPartNameToQueryMap.Add("groupBy2TimeStartPart", groupBy2TimeStartPart);
                         QueryPartNameToQueryMap.Add("groupBy2TimeMidPart", groupBy2TimeMidPart);
                         QueryPartNameToQueryMap.Add("groupBy2TimeEndPart", groupBy2TimeEndPart);
@@ -95,7 +96,7 @@ namespace BusinessLayer.QueryUtils
                         QueryPartNameToQueryMap.Add("groupBy2PropertyPart2", groupBy2PropertyPart2);
                     }
                 }
-            }
+            // }
 
             if (!QueryPartNameToQueryMap.ContainsKey("whereClausePart"))
             {
@@ -304,9 +305,31 @@ namespace BusinessLayer.QueryUtils
         private static void QueryForCount(WidgetRequestModel req, out string countStartPartQuery,
             out string countEndPartQuery)
         {
-            string columnName = req.FieldName.First().Key;
-            countStartPartQuery = $"\"{columnName}\" as {columnName}, COUNT(\"{columnName}\") as count ";
-            countEndPartQuery = $" Group By {columnName} ";
+
+            if (req.FieldName != null && req.FieldName.Count > 0)
+            {
+                string columnName = req.FieldName.First().Key;
+                if (req.IsDistinct)
+                {
+                    countStartPartQuery =
+                        $"\"{columnName}\" as {columnName}, COUNT(DISTINCT \"{columnName}\") as count ";
+                    countEndPartQuery = $" Group By {columnName} ";
+                }
+                else
+                {
+                    countStartPartQuery =
+                        $"\"{columnName}\" as {columnName}, COUNT(DISTINCT\"{columnName}\") as count ";
+                    countEndPartQuery = $" Group By {columnName} ";
+                }
+            }
+            else
+            {
+                string columnName = "*";
+               
+                    countStartPartQuery = $"COUNT({columnName}) as count";
+                    countEndPartQuery = $"";
+                
+            }
         }
 
         private static void QueryForLiveCount(WidgetRequestModel req, out string liveCountStartPartQuery,
@@ -591,7 +614,7 @@ namespace BusinessLayer.QueryUtils
                 columnsToClubQuery = "Sum(";
                 sumGroupByOptionalPart = " Group By ";
             }
-
+            
             foreach (var it in req.FieldName.Select((name, Index) => new { name, Index }))
             {
                 var fieldName = it.name;
@@ -607,33 +630,39 @@ namespace BusinessLayer.QueryUtils
                     columnsToClubQuery += fieldName.Key;
                 }
 
-                if (it.Index < req.FieldName.Count)
-                {
-                    aggregateSumQueryStartingPart += ',';
-                }
                 if (it.Index < req.FieldName.Count-1)
                 {
+                    aggregateSumQueryStartingPart += ',';
                     columnsToClubQuery += "+";
                 }
+
             }
 
             if (req.ClubbingFieldName != "" && req.FieldName.Count > 0)
             {
                 columnsToClubQuery += $") as {req.ClubbingFieldName}";
-                aggregateSumQueryStartingPart += columnsToClubQuery;
+                aggregateSumQueryStartingPart += $", {columnsToClubQuery}";
             }
 
             aggregateSumQueryEndingPart = "";
         }
 
 
-        private static void QueryForGroupByTime(string groupByTimeName, out string groupByTimeStartPart, out string groupByTimeMidPart,
+        private static void QueryForGroupByTime(WidgetRequestModel req, string groupByTimeName, out string groupByTimeStartPart, out string groupByTimeMidPart,
             out string groupByTimeEndPart)
         {
             string mapping;
             TimePeriodToItsClubMapping.TryGetValue(groupByTimeName, out mapping);
             groupByTimeStartPart = $"{groupByTimeName}";
-            groupByTimeMidPart = $"date_trunc('{mapping}', TO_TIMESTAMP(\"Time\")) as {groupByTimeName}";
+            if (req.ClubbingTime)
+            {
+                groupByTimeMidPart = $"Extract({mapping} from TO_TIMESTAMP(\"Time\")) as {groupByTimeName}";
+            }
+            else
+            {
+                groupByTimeMidPart = $"date_trunc('{mapping}', TO_TIMESTAMP(\"Time\")) as {groupByTimeName}";
+            }
+
             groupByTimeEndPart = $"{groupByTimeName}";
         }
 
@@ -655,7 +684,7 @@ namespace BusinessLayer.QueryUtils
             queryPartNameToQueryMap.TryGetValue("baseQuery", out basequery);
             queryPartNameToQueryMap.TryGetValue("whereClausePart", out whereClausePart);
 
-            if (req.FieldName != null && req.FieldName.Count > 0)
+            if (req.Method == Enum_Method.Count || req.FieldName != null && req.FieldName.Count > 0)
             {
                 string aggregateMethodStartingPartQuery = string.Empty,
                     aggregateMethodEndPartQuery = string.Empty,
@@ -675,7 +704,7 @@ namespace BusinessLayer.QueryUtils
                 basequery = basequery.Replace("*", aggregateMethodStartingPartQuery);
                 basequery += aggregateMethodEndPartQuery;
 
-                if (req.Method == Enum_Method.Sum || req.Method == Enum_Method.Average)
+                if (req.Method == Enum_Method.Sum || req.Method == Enum_Method.Count || req.Method == Enum_Method.Average)
                 {
                     basequery += aggregateMethodGroupByOptionalPart;
                 }
@@ -858,7 +887,10 @@ namespace BusinessLayer.QueryUtils
                 queryPartNameToQueryMap.TryGetValue("groupBy1TimeStartPart", out groupBy1TimeStartPart);
                 queryPartNameToQueryMap.TryGetValue("groupBy1TimeMidPart", out groupBy1TimeMidPart);
                 queryPartNameToQueryMap.TryGetValue("groupBy1TimeEndPart", out groupBy1TimeEndPart);
-
+                if (!basequery.Contains("Group By"))
+                {
+                    basequery += $" Group By ";
+                }
                 basequery = basequery.Replace("SELECT", $"(SELECT {groupBy1TimeMidPart}, ");
                 basequery += $",{groupBy1TimeEndPart} ) ";
             }
@@ -869,6 +901,10 @@ namespace BusinessLayer.QueryUtils
                 queryPartNameToQueryMap.TryGetValue("groupBy1PropertyPart2", out groupBy1PropertyPart2);
 
                 basequery = basequery.Replace("SELECT", $"(SELECT {groupBy1PropertyPart1}, ");
+                if (!basequery.Contains("Group By"))
+                {
+                    basequery += $" Group By ";
+                }
                 basequery += $",{groupBy1PropertyPart2} ) ";
             }
             
@@ -899,15 +935,18 @@ namespace BusinessLayer.QueryUtils
             else
             {
                 // groupby1 property other than time
-                PropertyGetColumnName(req.GroupBy1, out GroupByColumn);
+                // PropertyGetColumnName(req.GroupBy1, out GroupByColumn);
                 GroupByColumn = req.GroupBy1;
             }
 
             if (req.Method == Enum_Method.Count)
             {
                 // in case of count property can be a one single string
-                PropertyGetColumnName(req.FieldName.First().Key, out columnName);
-                columnName = req.FieldName.First().Key;
+                // PropertyGetColumnName(req.FieldName.First().Key, out columnName);
+                if (req.FieldName != null && req.FieldName.Count > 0)
+                {
+                    columnName = req.FieldName.First().Key;
+                }
             }
             else
             {   
@@ -951,7 +990,7 @@ namespace BusinessLayer.QueryUtils
                 }
                 else
                 {
-                    PropertyGetColumnName(req.GroupBy2, out GroupBy2Column);
+                    // PropertyGetColumnName(req.GroupBy2, out GroupBy2Column);
                     GroupBy2Column = req.GroupBy2;
                     GroupBy2Column = $", subpart1.{GroupBy2Column}"; // TODO: check this 2 count queries failed after removing quotes around this
                 }
@@ -982,13 +1021,44 @@ namespace BusinessLayer.QueryUtils
             string finalQuery = string.Empty;
             if (req.IsDistinct)
             {
-                finalQuery =
-                    $"Select subpart1.{GroupByColumn}{GroupBy2Column},subpart1.{columnName},sum(subpart1.count) as count From {basequery} group by subpart1.{GroupByColumn},subpart1.{columnName}{GroupBy2Column}";
+                if (!basequery.Contains("where"))
+                {
+                    basequery = Regex.Replace(basequery, "(Group\\sBy\\s*,)", "Group By ");
+                    basequery = Regex.Replace(basequery, "(Order\\sBy\\s*,)", "Order By ");
+                }
+
+                if (columnName != "")
+                {
+                    if (GroupBy2Column != "")
+                    {
+                        finalQuery =
+                            $"Select subpart1.\"{GroupByColumn}\"{GroupBy2Column},subpart1.{columnName},sum(subpart1.count) as count From {basequery} group by subpart1.{GroupByColumn},subpart1.{columnName}{GroupBy2Column} order by subpart1.{GroupByColumn},subpart1.{columnName}{GroupBy2Column}";
+                    }
+
+                    else
+                    {
+                        finalQuery =
+                            $"Select subpart1.\"{GroupByColumn}\",subpart1.{columnName},sum(subpart1.count) as count From {basequery} group by subpart1.{GroupByColumn},subpart1.{columnName} order by subpart1.{GroupByColumn},subpart1.{columnName}";
+                    }
+                }
+                else
+                {
+                    if (GroupBy2Column != "")
+                    {
+                        finalQuery =
+                            $"Select subpart1.\"{GroupByColumn}\"{GroupBy2Column},sum(subpart1.count) as count From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column} order by subpart1.{GroupByColumn}{GroupBy2Column}";
+                    }
+                    else
+                    {
+                        finalQuery =
+                            $"Select subpart1.\"{GroupByColumn}\",sum(subpart1.count) as count From {basequery} group by subpart1.\"{GroupByColumn}\" order by subpart1.\"{GroupByColumn}\"";
+                    }
+                }
             }
             else
             {
                 finalQuery =
-                    $"Select subpart1.{GroupByColumn}{GroupBy2Column},sum(subpart1.count) as count From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column}";
+                    $"Select subpart1.{GroupByColumn}{GroupBy2Column},sum(subpart1.count) as count From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column} order by by subpart1.{GroupByColumn}{GroupBy2Column}";
             }
 
             // for club time you don't need any part from sub query which is denoted as subpart2 
@@ -1060,7 +1130,7 @@ namespace BusinessLayer.QueryUtils
                     else
                     {
                         finalQuery =
-                            $"Select subpart1.{GroupByColumn}{GroupBy2Column},{columnName} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column},{columnName}  order by subpart1.{{GroupByColumn}}{{GroupBy2Column}},{{columnName}}";
+                            $"Select subpart1.{GroupByColumn}{GroupBy2Column}{columnName} From {basequery} group by subpart1.{GroupByColumn}{GroupBy2Column}{columnName}  order by subpart1.{GroupByColumn}{GroupBy2Column}{columnName}";
                     }
                 
             }

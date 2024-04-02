@@ -42,7 +42,10 @@ public enum Enum_Entity
     EnrolledPersonsEvent,
     Facepoint,
     Highway_ATCC,
-    VIDS
+    VIDS,
+    Vehicle_Stopped,
+    ANPR,
+    Wrong_Way_Detected
 }
 
 public enum Enum_Method
